@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="INFO">
+    <Properties>
+        <Property name="log.pattern">%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %l%n%m%n</Property>
+        <Property name="file.filename">log/MyJavaRaft.log</Property>
+        <Property name="file.pattern">log/MyJavaRaft.%i.log.gz</Property>
+    </Properties>
+
+    <Appenders>
+        <Console name="console" target="SYSTEM_OUT" follow="true">
+            <PatternLayout pattern="${log.pattern}"/>
+        </Console>
+        <RollingFile name="file" bufferedIO="true" fileName="${file.filename}" filePattern="${file.pattern}">
+            <PatternLayout pattern="${log.pattern}" />
+            <Policies>
+                <!-- 根据文件大小自动切割日志 -->
+                <SizeBasedTriggeringPolicy size="1 MB" />
+            </Policies>
+            <!-- 保留最近10份 -->
+            <DefaultRolloverStrategy max="10" />
+        </RollingFile>
+    </Appenders>
+
+    <Loggers>
+        <Root level="ALL">
+            <AppenderRef ref="console"/>
+            <AppenderRef ref="file"/>
+        </Root>
+    </Loggers>
+</Configuration>
