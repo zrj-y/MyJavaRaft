@@ -14,7 +14,7 @@
             <PatternLayout pattern="${log.pattern}" />
             <Policies>
                 <!-- 根据文件大小自动切割日志 -->
-                <SizeBasedTriggeringPolicy size="1 MB" />
+                <SizeBasedTriggeringPolicy size="10 MB" />
             </Policies>
             <!-- 保留最近10份 -->
             <DefaultRolloverStrategy max="10" />

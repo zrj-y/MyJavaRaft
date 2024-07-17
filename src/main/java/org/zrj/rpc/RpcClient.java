@@ -1,26 +1,54 @@
 package org.zrj.rpc;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import lombok.extern.slf4j.Slf4j;
+import org.zrj.rpc.tool.Channel;
 
+import java.util.Random;
+
+/**
+ * 只发送RequestMessage到消息队列，由NetWork接收消息然后通过reply channel返回响应
+ */
+@Slf4j
 public class RpcClient {
+    private final Random random;
+    private final String name;
+    private final String endName;
+    private final Channel<RpcRequestMessage> ch;
+    private final Network.Done network;
 
-    private final Register register;
-
-    public RpcClient(Register register) {
-        this.register = register;
+    public RpcClient(Channel<RpcRequestMessage> ch, String name, String endName, Network.Done network) {
+        this.ch = ch;
+        this.name = name;
+        this.endName = endName;
+        this.network = network;
+        this.random = new Random();
     }
-    public void call(String nodeId, String methodName, Object... args) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
-        Object object = register.getNode(nodeId);
-        Class<?>[] parameterTypes = new Class<?>[args.length];
-        for (int i = 0; i < args.length; i++) {
-            parameterTypes[i] = args[i].getClass();
+
+    // raft node调用call将请求发送给NetWork, NetWork通过reply channel返回响应
+    public RpcReplyMessage call(String methodName, Object... args) {
+        log.info("{} start to call other node {} {}", name, methodName, args);
+        RpcRequestMessage rpcRequest = RpcRequestMessage.builder()
+            .from(this.name)
+            .endName(this.endName)
+            .methodName(methodName)
+            .args(args)
+            .replyCh(new Channel<>())
+            .build();
+        if (network.isDone()) {
+            return RpcReplyMessage.builder().ok(false).build();
         }
-        Method method = object.getClass().getMethod(methodName, parameterTypes);
-        method.invoke(object, args);
+        // 将消息发送给Network
+        ch.put(rpcRequest);
+        log.info("{} succeed to call other node {} {}", name, methodName, args);
+        // 阻塞等待Network响应
+        return rpcRequest.getReplyCh().take();
     }
 
-    public Register getRegister() {
-        return register;
+    @Override
+    public String toString() {
+        return "RpcClient{" +
+            "name='" + name + '\'' +
+            ", endName='" + endName + '\'' +
+            '}';
     }
 }
