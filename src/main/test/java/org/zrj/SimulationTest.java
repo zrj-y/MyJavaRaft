@@ -12,17 +12,16 @@ public class SimulationTest {
 
     @Test
     public void test() {
-        for(int i = 0; i < 100; ++i) {
+        for (int i = 0; i < 100; ++i) {
             a = i;
             testInitialElection2A();
             Sleep.sleep(100);
         }
     }
 
-    @Test
     public static void main(String[] args) {
         SimulationTest simulationTest = new SimulationTest();
-        for(int i = 0; i < 50; ++i) {
+        for (int i = 0; i < 50; ++i) {
             a = i;
             simulationTest.testInitialElection2A();
         }
@@ -61,6 +60,37 @@ public class SimulationTest {
 
     @Test
     public void testReElection2A() {
+        int servers = 3;
+        ClusterConfig clusterConfig = new ClusterConfig(servers, false, a);
+        clusterConfig.begin("Test (2A): initial election");
 
+        String leader1 = clusterConfig.checkOneLeader();
+
+        // if the leader disconnects, a new one should be elected.
+        clusterConfig.disconnect(leader1);
+        clusterConfig.checkOneLeader();
+
+        // if the old leader rejoins, that shouldn't
+        // disturb the new leader.
+        clusterConfig.connect(leader1);
+        String leader2 = clusterConfig.checkOneLeader();
+
+        // if there's no quorum, no leader should
+        // be elected.
+        clusterConfig.disconnect(leader2);
+        clusterConfig.disconnect(clusterConfig.nextNode(leader2));
+        Sleep.sleep(2 * RaftElectionTimeout);
+        clusterConfig.checkNoLeader();
+
+        // if a quorum arises, it should elect a leader.
+        clusterConfig.connect(clusterConfig.nextNode(leader2));
+        clusterConfig.checkOneLeader();
+
+        // re-join of last node shouldn't prevent leader from existing.
+        clusterConfig.connect(leader2);
+        clusterConfig.checkOneLeader();
+
+        clusterConfig.end();
+        clusterConfig.cleanUp();
     }
 }

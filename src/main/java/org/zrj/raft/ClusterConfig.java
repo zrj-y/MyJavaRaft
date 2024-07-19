@@ -475,6 +475,15 @@ public class ClusterConfig {
         log.info("  {}  {} {} {} {}}\n", t, npeers, nrpc, nbytes, ncmds);
     }
 
+    public String nextNode(String nodeId) {
+        for (int i = 0; i < nodeIds.size(); ++i) {
+            if (nodeIds.get(i).equals(nodeId)) {
+                return nodeIds.get((i + 1) % nodeIds.size());
+            }
+        }
+        return null;
+    }
+
     @Builder
     @Getter
     public static class NCommit {

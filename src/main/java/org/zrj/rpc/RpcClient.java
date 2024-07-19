@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.zrj.rpc.tool.Channel;
 
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 只发送RequestMessage到消息队列，由NetWork接收消息然后通过reply channel返回响应
@@ -39,9 +40,15 @@ public class RpcClient {
         }
         // 将消息发送给Network
         ch.put(rpcRequest);
-        log.info("{} succeed to call other node {} {}", name, methodName, args);
         // 阻塞等待Network响应
-        return rpcRequest.getReplyCh().take();
+        log.info("{} succeed to call other node {} {}", name, methodName, args);
+        RpcReplyMessage reply = rpcRequest.getReplyCh().poll(10 * 1000, TimeUnit.MILLISECONDS);
+        if (reply == null) {
+            log.info("{} fail get reply from other node {} {}", name, methodName, args);
+        } else {
+            log.info("{} succeed get reply from other node {} {}", name, methodName, args);
+        }
+        return reply;
     }
 
     @Override
