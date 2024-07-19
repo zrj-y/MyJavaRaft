@@ -334,7 +334,7 @@ public class Raft implements Node {
             RpcClient peer = entry.getValue();
             Runnable runnable = () -> peer.call(methodName, args);
             // 可以通过其他手段控制线程池最长执行时间，避免线程太多。
-            new Thread(runnable, "call peer").start();
+            new Thread(runnable, "call-peer-thread").start();
         }
     }
 

@@ -92,7 +92,7 @@ public class Network {
                     (r, executor) -> log.warn("Net pool is full, reject the request {}", r)
                 );
                 while (!done.isDone()) {
-                    RpcRequestMessage req = endCh.poll(10 * 1000, TimeUnit.MILLISECONDS);
+                    RpcRequestMessage req = endCh.poll(2 * 1000, TimeUnit.MILLISECONDS);
                     if (req == null) {
                         continue;
                     }
@@ -154,7 +154,7 @@ public class Network {
             if (!reliable) {
                 Sleep.sleep(random.nextInt(27));
                 if (random.nextInt(1000) < 100) {
-                    request.getReplyCh().put(RpcReplyMessage.builder().ok(false).reply(null).build());
+                    request.getReplyCh().offer(RpcReplyMessage.builder().ok(false).reply(null).build(), 5 * 1000, TimeUnit.MILLISECONDS);
                     return;
                 }
             }
@@ -167,7 +167,7 @@ public class Network {
                 public void run() {
                     log.debug("Network process request {}", request);
                     RpcReplyMessage reply = server.dispatch(request);
-                    boolean replySuccess = ech.offer(reply, 1000 * 10, TimeUnit.MILLISECONDS);
+                    boolean replySuccess = ech.offer(reply, 10 * 1000, TimeUnit.MILLISECONDS);
                     if (!replySuccess) {
                         log.warn("{} request has not been replied", request);
                     } else {
@@ -185,31 +185,38 @@ public class Network {
                 } else {
                     serverDead = isServerDead(request.getEndName(), serverName, server);
                     if (serverDead) {
-                        new Thread(ech::take).start();
+                        new Thread(() -> ech.poll(2 * 1000, TimeUnit.MILLISECONDS), "Consume-last-message-thread-").start();
                     }
                 }
             }
 
             serverDead = isServerDead(request.getEndName(), serverName, server);
             if (!replyOK || serverDead) {
-                request.getReplyCh().put(RpcReplyMessage.builder().ok(false).reply(null).build());
+                request.getReplyCh().offer(RpcReplyMessage.builder().ok(false).reply(null).build(), 10 * 1000, TimeUnit.MILLISECONDS);
             } else if (!reliable && random.nextInt(1000) < 100) {
-                request.getReplyCh().put(RpcReplyMessage.builder().ok(false).reply(null).build());
+                request.getReplyCh().offer(RpcReplyMessage.builder().ok(false).reply(null).build(), 10 * 1000, TimeUnit.MILLISECONDS);
             } else if (longReordering && random.nextInt(900) < 600) {
-                ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+                ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(
+                    new BasicThreadFactory.Builder().namingPattern("Network-Process-Req-Scheduled-pool1-").build()
+                );
                 RpcReplyMessage finalReply = reply;
                 executor.schedule(() -> {
-                    request.getReplyCh().put(finalReply);
+                    request.getReplyCh().offer(finalReply, 10 * 1000, TimeUnit.MILLISECONDS);
                 }, 200 + random.nextInt(1 + random.nextInt(2000)), TimeUnit.MILLISECONDS);
                 executor.shutdown();
             } else {
-                request.getReplyCh().put(reply);
+                request.getReplyCh().offer(reply, 10 * 1000, TimeUnit.MILLISECONDS);
             }
         } else {
-            ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+            ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(
+                new BasicThreadFactory.Builder().namingPattern("Network-Process-Req-Scheduled-pool2-").build()
+            );
             int ms = longDelays ? random.nextInt(7000) : random.nextInt(100);
             executor.schedule(
-                () -> request.getReplyCh().put(RpcReplyMessage.builder().ok(false).reply(null).build()),
+                () -> {
+                    request.getReplyCh().offer(RpcReplyMessage.builder().ok(false).reply(null).build(), 2 * 1000, TimeUnit.MILLISECONDS);
+                    executor.shutdown();
+                },
                 ms, TimeUnit.MILLISECONDS
             );
         }
