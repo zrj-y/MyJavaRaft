@@ -39,7 +39,11 @@ public class Channel<E> extends SynchronousQueue<E> {
 
     @Override
     public E poll(long timeout, TimeUnit unit) {
-        return queue.poll();
+        try {
+            return queue.poll(timeout, unit);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 
 }
