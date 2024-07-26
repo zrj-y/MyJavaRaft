@@ -168,7 +168,9 @@ public class Network {
             Thread thread = new Thread("Network-Process-Req-thread-") {
                 @Override
                 public void run() {
+                    log.info("wating dispathch1");
                     RpcReplyMessage reply = server.dispatch(request);
+                    log.info("wating dispathch2");
                     boolean replySuccess = ech.offer(reply, 10 * 1000, TimeUnit.MILLISECONDS);
                     if (!replySuccess) {
                         log.warn("{} request has not been replied", request);

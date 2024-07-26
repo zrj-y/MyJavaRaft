@@ -109,10 +109,7 @@ public class Raft implements Node {
 
 
     public StartResponse start(String command) {
-        int index = -1;
-        int term = -1;
-        boolean isLeader = false;
-        StartResponse response = StartResponse.builder().commandIndex(index).term(term).leader(isLeader).build();
+        StartResponse response = StartResponse.builder().commandIndex(-1).term(-1).leader(false).build();
         lock.lock();
         if (Leader.equals(role)) {
             LogEntry logEntry = LogEntry.builder()
@@ -141,7 +138,14 @@ public class Raft implements Node {
         // 可能转到Candidate
         lastReceivingHeartBeatTime = System.currentTimeMillis();
         int electionTimeOut = getElectionTimeOut();
-        ScheduledExecutorService delayTask = Executors.newScheduledThreadPool(1, new BasicThreadFactory.Builder().namingPattern("Follower-pool-").build());
+        ScheduledExecutorService delayTask = Executors.newScheduledThreadPool(1,
+            new BasicThreadFactory.Builder().namingPattern("Follower-pool-")
+                .uncaughtExceptionHandler((t, e) -> {
+                        log.error(e.getMessage(), e);
+                        throw new RuntimeException(e);
+                    }
+                ).build()
+        );
         log.info("{} set electionTimeOut {} at term {}", me, electionTimeOut, term);
         delayTask.schedule(() -> {
             long current = System.currentTimeMillis();
@@ -160,7 +164,14 @@ public class Raft implements Node {
         log.info("doCandidate {} at {}", me, term);
         role = Candidate;
         // 先收到leader term更新成10，变成了Follower，
-        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1, new BasicThreadFactory.Builder().namingPattern("Candidate-pool-").build());
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1,
+            new BasicThreadFactory.Builder().namingPattern("Candidate-pool-")
+                .uncaughtExceptionHandler((t, e) -> {
+                        log.error(e.getMessage(), e);
+                        throw new RuntimeException(e);
+                    }
+                ).build()
+        );
         Runnable electionTask = new Runnable() {
             @Override
             public void run() {
@@ -168,35 +179,32 @@ public class Raft implements Node {
                  * 收到leader的消息，term变成request.term。然后给term+1，这时候发送的term数据不正确
                  * sendElectionRequest()本身会异步执行，保证这次发送即使阻塞了也不影响下次electionTimeOut再次执行sendElectionRequest()
                  */
-                try {
-                    lock.lock();
-                    if (Candidate.equals(role) && !stop) {
-                        term += 1; // 收到voteResponse比较term并处理需要和这互斥
-                        voteAtTerm = term;
-                        votedFor = me;
-                        upvoteCount = 1; // 重置投票数为1，自己投自己一票
-                        // 这个地方加锁是因为其他线程会修改term, log
-                        ElectionRequest electionRequest = new ElectionRequest();
-                        electionRequest.setNodeId(me);
-                        electionRequest.setTerm(term);
-                        int lastLogIndex = logs.size() - 1;
-                        int lastLogTerm = getLogTerm(lastLogIndex);
-                        electionRequest.setLastLogIndex(lastLogIndex);
-                        electionRequest.setLastLogTerm(lastLogTerm);
-                        electionRequest.setTracingId();
-                        // 异步发送消息
-                        broadCastAsync("handleElectionRequest", electionRequest);
-                        lock.unlock();
-                        int electionTimeOut = getElectionTimeOut();
-                        log.info("{} set electionTimeOut {} at term {}", me, electionTimeOut, term);
-                        scheduler.schedule(this, electionTimeOut, TimeUnit.MILLISECONDS);
-                    } else {
-                        lock.unlock();
-                        // 不会立即shutdown所有线程，只是不接受任务，允许线程执行完自己结束。未调用shutdown则线程一直打开
-                        scheduler.shutdown();
-                    }
-                } catch (Exception e) {
-                    log.error(e.getMessage(), e);
+                lock.lock();
+                if (Candidate.equals(role) && !stop) {
+                    term += 1; // 收到voteResponse比较term并处理需要和这互斥
+                    voteAtTerm = term;
+                    votedFor = me;
+                    upvoteCount = 1; // 重置投票数为1，自己投自己一票
+                    // 这个地方加锁是因为其他线程会修改term, log
+                    ElectionRequest electionRequest = new ElectionRequest();
+                    electionRequest.setNodeId(me);
+                    electionRequest.setTerm(term);
+                    int lastLogIndex = logs.size() - 1;
+                    int lastLogTerm = getLogTerm(lastLogIndex);
+                    electionRequest.setLastLogIndex(lastLogIndex);
+                    electionRequest.setLastLogTerm(lastLogTerm);
+                    electionRequest.setTracingId();
+                    // 异步发送消息
+                    broadCastAsync("handleElectionRequest", electionRequest);
+                    lock.unlock();
+                    int electionTimeOut = getElectionTimeOut();
+                    log.info("{} set electionTimeOut {} at term {}", me, electionTimeOut, term);
+                    scheduler.schedule(this, electionTimeOut, TimeUnit.MILLISECONDS);
+                } else {
+                    lock.unlock();
+                    // 不会立即shutdown所有线程，只是不接受任务，允许线程执行完自己结束。未调用shutdown则线程一直打开
+                    log.info("{} stop!!!", me);
+                    scheduler.shutdown();
                 }
             }
         };
@@ -303,18 +311,19 @@ public class Raft implements Node {
         lock.unlock();
     }
 
-    /**
-     * 2.
-     * 但是实际实现可以这样：
-     * 节点a是leader节点，b是follower节点。a掉线，掉线期间b复制了很多日志。a恢复重新成为leader，初始化nextIndex = 0, matchIndex = -1，
-     * b收到a的心跳包后需要删除b后来复制的日志(这些日志肯定没提交，否则a也成不了leader节点)，
-     * 这时候
-     */
     private void doLeader() {
         log.info("doLeader {} at {}, sate", me, term);
         // 以免doLeader()又被转换成candidate
         lastReceivingHeartBeatTime = System.currentTimeMillis();
-        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1, new BasicThreadFactory.Builder().namingPattern("Leader-pool-").build());
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1,
+            new BasicThreadFactory.Builder()
+                .namingPattern("Leader-pool-")
+                .uncaughtExceptionHandler((t, e) -> {
+                        log.error(e.getMessage(), e);
+                        throw new RuntimeException(e);
+                    }
+                ).build()
+        );
         lock.lock();
         for (String peer : peers.keySet()) {
             nextIndexMap.put(peer, logs.size());
@@ -325,41 +334,36 @@ public class Raft implements Node {
             public void run() {
                 lock.lock();
                 if (Leader.equals(role) && !stop) {
-                    try {
-                        AppendEntriesRequest heartBeatRequest = new AppendEntriesRequest();
-                        heartBeatRequest.setTracingId();
-                        heartBeatRequest.setLeaderId(me);
-                        heartBeatRequest.setTerm(term);
-                        heartBeatRequest.setLeaderCommit(commitIndex);
-                        for (Map.Entry<String, RpcClient> peer : peers.entrySet()) {
-                            String peerId = peer.getKey();
-                            if (me.equals(peerId)) {
-                                continue;
-                            }
-                            // 收到response时候需要更新nextIndexMap，注意线程安全
-                            int nextIndex = nextIndexMap.get(peerId);
-                            int prevLogIndex = nextIndex - 1;
-                            int lastIndex = Math.min(logs.size() - 1, nextIndex + ClusterConfigConstant.MAX_BATCH_SIZE);
-                            int prevLogTerm = prevLogIndex >= 0 && logs.size() > 0 ? logs.get(prevLogIndex).getIndex() : 0;
-                            // 初始化时nextIndex == logs.size()，此时发空心跳包检测match情况，不match再减少nextIndex
-                            // 异步调用RPC接口，传入参数中包含list接口，与Raft其他线程并发修改list会造成ConcurrentModificationException
-                            List<LogEntry> logEntries = nextIndex == logs.size() || logs.size() == 0 ? new ArrayList<>() : new ArrayList<>(logs.subList(nextIndex, lastIndex + 1));
-                            if (logEntries.size() == 0) {
-                                log.info("empty entry nextIndex-{} lastIndex-{}", nextIndex, lastIndex);
-                            } else {
-                                log.info("not-empty entry nextIndex-{} lastIndex-{}", nextIndex, lastIndex);
-                            }
-                            heartBeatRequest.setPrevLogIndex(prevLogIndex);
-                            heartBeatRequest.setPreLogTerm(prevLogTerm);
-                            heartBeatRequest.setEntries(logEntries);
-                            heartBeatRequest.setLeaderCommit(commitIndex);
-                            rpcCallAsync(peerId, "handleHeartBeatRequest", heartBeatRequest);
+                    AppendEntriesRequest heartBeatRequest = new AppendEntriesRequest();
+                    heartBeatRequest.setTracingId();
+                    heartBeatRequest.setLeaderId(me);
+                    heartBeatRequest.setTerm(term);
+                    heartBeatRequest.setLeaderCommit(commitIndex);
+                    for (Map.Entry<String, RpcClient> peer : peers.entrySet()) {
+                        String peerId = peer.getKey();
+                        if (me.equals(peerId)) {
+                            continue;
                         }
-                        scheduler.schedule(this, ClusterConfigConstant.HEART_BEAT_TIMEOUT, TimeUnit.MILLISECONDS);
-                    } catch (Exception e) {
-                        log.error(e.getMessage(), e);
-                        throw new RuntimeException(e);
+                        // 收到response时候需要更新nextIndexMap，注意线程安全
+                        int nextIndex = nextIndexMap.get(peerId);
+                        int prevLogIndex = nextIndex - 1;
+                        int lastIndex = Math.min(logs.size() - 1, nextIndex + ClusterConfigConstant.MAX_BATCH_SIZE);
+                        int prevLogTerm = prevLogIndex >= 0 && logs.size() > 0 ? logs.get(prevLogIndex).getIndex() : 0;
+                        // 初始化时nextIndex == logs.size()，此时发空心跳包检测match情况，不match再减少nextIndex
+                        // 异步调用RPC接口，传入参数中包含list接口，与Raft其他线程并发修改list会造成ConcurrentModificationException
+                        List<LogEntry> logEntries = nextIndex == logs.size() || logs.size() == 0 ? new ArrayList<>() : new ArrayList<>(logs.subList(nextIndex, lastIndex + 1));
+                        if (logEntries.size() == 0) {
+                            log.info("empty entry nextIndex-{} lastIndex-{}", nextIndex, lastIndex);
+                        } else {
+                            log.info("not-empty entry nextIndex-{} lastIndex-{}", nextIndex, lastIndex);
+                        }
+                        heartBeatRequest.setPrevLogIndex(prevLogIndex);
+                        heartBeatRequest.setPreLogTerm(prevLogTerm);
+                        heartBeatRequest.setEntries(logEntries);
+                        heartBeatRequest.setLeaderCommit(commitIndex);
+                        rpcCallAsync(peerId, "handleHeartBeatRequest", heartBeatRequest);
                     }
+                    scheduler.schedule(this, ClusterConfigConstant.HEART_BEAT_TIMEOUT, TimeUnit.MILLISECONDS);
                 } else {
                     log.info("{} stop!!!", me);
                     scheduler.shutdown();
@@ -412,12 +416,14 @@ public class Raft implements Node {
         // 可能是去年作为leader时候发出的AppendEntriesRequest的response
         // 忽略掉不是自己任期时的消息
         if (appendEntriesResponse.getRequesterTerm() != term) {
+            lock.unlock();
             return;
         }
         int peerTerm = appendEntriesResponse.getResponderTerm();
         if (peerTerm > term) {
             term = appendEntriesResponse.getResponderTerm();
             doFollower();
+            lock.unlock();
             return;
         }
         String peer = appendEntriesResponse.getNodeId();
@@ -467,7 +473,7 @@ public class Raft implements Node {
                 .commandIndex(i)
                 .command(logs.get(i).getCommand())
                 .build();
-            applyCh.put(applyMsg);
+            applyCh.offer(applyMsg, 2 * 1000, TimeUnit.MILLISECONDS);
         }
         log.info("node {} term {} commitIndex {} lastApplied {} +1", me, term, commitIndex, lastApplied);
         lastApplied = commitIndex;

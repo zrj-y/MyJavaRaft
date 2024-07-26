@@ -39,7 +39,7 @@ public class RpcClient {
         log.info("{} start to call other node {} {}, request hashcode {}, {} {}", name, methodName, args, rpcRequest.hashCode(), Metrics.RPC_TOTAL_REQUEST_COUNT_METRICS, Metrics.RPC_TOTAL_REQUEST_COUNT.incrementAndGet());
         // 将消息发送给Network
         ch.put(rpcRequest);
-        RpcReplyMessage reply = rpcRequest.getReplyCh().poll(100 * 1000, TimeUnit.MILLISECONDS);
+        RpcReplyMessage reply = rpcRequest.getReplyCh().poll(10 * 1000, TimeUnit.MILLISECONDS);
         if (reply == null) {
             log.warn("{} fail get reply from other node {} {} {}", name, methodName, args, rpcRequest.hashCode());
         } else {

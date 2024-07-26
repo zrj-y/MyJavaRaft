@@ -22,7 +22,7 @@ public class SimulationTest {
 
     public static void main(String[] args) {
         SimulationTest simulationTest = new SimulationTest();
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 0; i < 20; ++i) {
             a = i;
             simulationTest.testBasicAgree2B();
         }
