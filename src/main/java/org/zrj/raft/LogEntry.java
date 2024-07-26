@@ -2,9 +2,11 @@ package org.zrj.raft;
 
 import lombok.Builder;
 import lombok.Getter;
+import lombok.ToString;
 
 @Getter
 @Builder
+@ToString
 public class LogEntry {
     private final int term;
     private final int index;
