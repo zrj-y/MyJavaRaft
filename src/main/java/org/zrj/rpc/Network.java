@@ -28,16 +28,16 @@ import java.util.concurrent.locks.ReentrantLock;
 @Getter
 @Slf4j
 public class Network {
-    private Lock lock;
-    private Random random;
+    private final Lock lock;
+    private final Random random;
     private boolean reliable;
 
     // pause a long time on send on disabled connection
     private boolean longDelays;
     // sometimes delay replies a long time
     private boolean longReordering;
-    private Channel<RpcRequestMessage> endCh;
-    private Done done;
+    private final Channel<RpcRequestMessage> endCh;
+    private final Done done;
     private final AtomicInteger count;
     private final AtomicLong bytes;
 
@@ -96,6 +96,9 @@ public class Network {
                     if (req == null) {
                         continue;
                     }
+                    count.incrementAndGet();
+                    bytes.addAndGet(req.getArgs().length);
+                    log.info("network start process requests num {}, request hashcode {}", count.get(), req.hashCode());
                     processReqPool.execute(() -> processReq(req));
                 }
                 processReqPool.shutdown();
@@ -154,7 +157,7 @@ public class Network {
             if (!reliable) {
                 Sleep.sleep(random.nextInt(27));
                 if (random.nextInt(1000) < 100) {
-                    request.getReplyCh().offer(RpcReplyMessage.builder().ok(false).reply(null).build(), 5 * 1000, TimeUnit.MILLISECONDS);
+                    offerReplyToRequestReplyChannel(request, RpcReplyMessage.builder().ok(false).reply(null).build());
                     return;
                 }
             }
@@ -165,7 +168,6 @@ public class Network {
             Thread thread = new Thread("Network-Process-Req-thread-") {
                 @Override
                 public void run() {
-                    log.debug("Network process request {}", request);
                     RpcReplyMessage reply = server.dispatch(request);
                     boolean replySuccess = ech.offer(reply, 10 * 1000, TimeUnit.MILLISECONDS);
                     if (!replySuccess) {
@@ -192,20 +194,18 @@ public class Network {
 
             serverDead = isServerDead(request.getEndName(), serverName, server);
             if (!replyOK || serverDead) {
-                request.getReplyCh().offer(RpcReplyMessage.builder().ok(false).reply(null).build(), 10 * 1000, TimeUnit.MILLISECONDS);
+                offerReplyToRequestReplyChannel(request, RpcReplyMessage.builder().ok(false).reply(null).build());
             } else if (!reliable && random.nextInt(1000) < 100) {
-                request.getReplyCh().offer(RpcReplyMessage.builder().ok(false).reply(null).build(), 10 * 1000, TimeUnit.MILLISECONDS);
+                offerReplyToRequestReplyChannel(request, RpcReplyMessage.builder().ok(false).reply(null).build());
             } else if (longReordering && random.nextInt(900) < 600) {
                 ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(
                     new BasicThreadFactory.Builder().namingPattern("Network-Process-Req-Scheduled-pool1-").build()
                 );
                 RpcReplyMessage finalReply = reply;
-                executor.schedule(() -> {
-                    request.getReplyCh().offer(finalReply, 10 * 1000, TimeUnit.MILLISECONDS);
-                }, 200 + random.nextInt(1 + random.nextInt(2000)), TimeUnit.MILLISECONDS);
+                executor.schedule(() -> offerReplyToRequestReplyChannel(request, finalReply), 200 + random.nextInt(1 + random.nextInt(2000)), TimeUnit.MILLISECONDS);
                 executor.shutdown();
             } else {
-                request.getReplyCh().offer(reply, 10 * 1000, TimeUnit.MILLISECONDS);
+                offerReplyToRequestReplyChannel(request, reply);
             }
         } else {
             ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(
@@ -214,7 +214,7 @@ public class Network {
             int ms = longDelays ? random.nextInt(7000) : random.nextInt(100);
             executor.schedule(
                 () -> {
-                    request.getReplyCh().offer(RpcReplyMessage.builder().ok(false).reply(null).build(), 2 * 1000, TimeUnit.MILLISECONDS);
+                    offerReplyToRequestReplyChannel(request, RpcReplyMessage.builder().ok(false).reply(null).build());
                     executor.shutdown();
                 },
                 ms, TimeUnit.MILLISECONDS
@@ -276,6 +276,15 @@ public class Network {
 
     public long getTotalBytes() {
         return bytes.get();
+    }
+
+    private void offerReplyToRequestReplyChannel(RpcRequestMessage request, RpcReplyMessage reply) {
+        boolean success = request.getReplyCh().offer(reply, 2 * 1000, TimeUnit.MILLISECONDS);
+        if (success) {
+            log.info("offer message to reply channel, request hashcode {}, {} {}", request.hashCode(), Metrics.RPC_REPLY_OFFER_COUNT_METRICS, Metrics.RPC_REPLY_OFFER_COUNT.incrementAndGet());
+        } else {
+            log.warn("fail to offer message to reply channel");
+        }
     }
 
     private void doWithLock(Runnable r) {

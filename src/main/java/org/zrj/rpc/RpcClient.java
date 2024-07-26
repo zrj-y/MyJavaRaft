@@ -16,7 +16,6 @@ public class RpcClient {
     private final String endName;
     private final Channel<RpcRequestMessage> ch;
     private final Network.Done network;
-
     public RpcClient(Channel<RpcRequestMessage> ch, String name, String endName, Network.Done network) {
         this.ch = ch;
         this.name = name;
@@ -27,7 +26,6 @@ public class RpcClient {
 
     // raft node调用call将请求发送给NetWork, NetWork通过reply channel返回响应
     public RpcReplyMessage call(String methodName, Object... args) {
-        log.info("{} start to call other node {} {}", name, methodName, args);
         RpcRequestMessage rpcRequest = RpcRequestMessage.builder()
             .from(this.name)
             .endName(this.endName)
@@ -38,15 +36,14 @@ public class RpcClient {
         if (network.isDone()) {
             return RpcReplyMessage.builder().ok(false).build();
         }
+        log.info("{} start to call other node {} {}, request hashcode {}, {} {}", name, methodName, args, rpcRequest.hashCode(), Metrics.RPC_TOTAL_REQUEST_COUNT_METRICS, Metrics.RPC_TOTAL_REQUEST_COUNT.incrementAndGet());
         // 将消息发送给Network
         ch.put(rpcRequest);
-        // 阻塞等待Network响应
-        log.info("{} succeed to call other node {} {}", name, methodName, args);
-        RpcReplyMessage reply = rpcRequest.getReplyCh().poll(10 * 1000, TimeUnit.MILLISECONDS);
+        RpcReplyMessage reply = rpcRequest.getReplyCh().poll(100 * 1000, TimeUnit.MILLISECONDS);
         if (reply == null) {
-            log.info("{} fail get reply from other node {} {}", name, methodName, args);
+            log.warn("{} fail get reply from other node {} {} {}", name, methodName, args, rpcRequest.hashCode());
         } else {
-            log.info("{} succeed get reply from other node {} {}", name, methodName, args);
+            log.info("{} succeed get reply from other node {} {}, request hashcode {}, {} {}", name, methodName, args, rpcRequest.hashCode(), Metrics.RPC_REPLY_POLL_COUNT_METRICS, Metrics.RPC_REPLY_POLL_COUNT.incrementAndGet());
         }
         return reply;
     }

@@ -10,14 +10,16 @@ public class ElectionRequest extends Message {
     @NonNull
     private String nodeId;
     private int term;
-    private long LogIndex;
+    private int lastLogIndex;
+    private int lastLogTerm;
 
     @Override
     public String toString() {
         return "ElectionRequest{" +
             "nodeId=" + nodeId +
             ", term=" + term +
-            ", LogIndex=" + LogIndex +
+            ", lastLogIndex=" + lastLogIndex +
+            ", lastLogTerm" + lastLogTerm +
             '}';
     }
 }

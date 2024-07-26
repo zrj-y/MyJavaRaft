@@ -2,6 +2,7 @@ package org.zrj.raft;
 
 import lombok.Builder;
 import lombok.Getter;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.zrj.rpc.Network;
 import org.zrj.rpc.RpcClient;
@@ -139,8 +140,6 @@ public class ClusterConfig {
 
             @Override
             public void run() {
-
-
                 while (!end) {
                     ApplyMsg m = applyCh.poll(1000 * 10, TimeUnit.MILLISECONDS);
                     if (m == null) {
@@ -181,9 +180,7 @@ public class ClusterConfig {
             }
         };
         t.start();
-        log.info("create Raft");
         Raft raft = new Raft(ends, nodeId, this.saved.get(nodeId), applyCh);
-        log.info("{} raft peers {}", nodeId, ends);
         this.lock.lock();
         rafts.put(nodeId, raft);
         this.lock.unlock();
@@ -246,10 +243,6 @@ public class ClusterConfig {
 
     public long bytesTotal() {
         return network.getTotalBytes();
-    }
-
-    public void setLongReordering(boolean longrel) {
-        network.setLongReordering(longrel);
     }
 
     public String checkOneLeader() {
@@ -486,6 +479,7 @@ public class ClusterConfig {
 
     @Builder
     @Getter
+    @ToString
     public static class NCommit {
         private int count;
         private String cmd;
