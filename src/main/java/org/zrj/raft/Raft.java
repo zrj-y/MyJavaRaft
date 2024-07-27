@@ -146,7 +146,7 @@ public class Raft implements Node {
                     }
                 ).build()
         );
-        log.info("{} set electionTimeOut {} at term {}", me, electionTimeOut, term);
+        log.info("{} {} set electionTimeOut {} at term {}", me, role, electionTimeOut, term);
         delayTask.schedule(() -> {
             long current = System.currentTimeMillis();
             if (current - lastReceivingHeartBeatTime >= electionTimeOut && role.equals(Follower)) {
@@ -198,7 +198,7 @@ public class Raft implements Node {
                     broadCastAsync("handleElectionRequest", electionRequest);
                     lock.unlock();
                     int electionTimeOut = getElectionTimeOut();
-                    log.info("{} set electionTimeOut {} at term {}", me, electionTimeOut, term);
+                    log.info("{} {} set electionTimeOut {} at term {}", me, role, electionTimeOut, term);
                     scheduler.schedule(this, electionTimeOut, TimeUnit.MILLISECONDS);
                 } else {
                     lock.unlock();
@@ -230,15 +230,6 @@ public class Raft implements Node {
             response.setVote(false);
             response.setResponderTerm(term);
             rpcCallAsync(request.getNodeId(), "handleElectionResponse", response);
-        } else if (requesterTerm > term) {
-            response.setVote(true);
-            log.info("{} at term {} grant request from {} true, requesterTerm {}, my term {}", me, term, request.getNodeId(), requesterTerm, term);
-            term = requesterTerm;
-            response.setResponderTerm(term);
-            voteAtTerm = term;
-            votedFor = request.getNodeId();
-            rpcCallAsync(request.getNodeId(), "handleElectionResponse", response);
-            doFollower();
         } else {
             // 使用voteFor == null判断比较麻烦，还需要每次更新term的时候将voteFor设置为null
             // 使用voteAtTerm只需要在这里更新就可以了
@@ -247,13 +238,18 @@ public class Raft implements Node {
             boolean grantVote = hasNotVoted && isLatestLog;
             log.info("{} at term {} grant request from {} {}, requesterTerm {}, my voteFor {}, my voteAtTerm {}, hasNotVoted {}, isLatestLog {}", me, term, request.getNodeId(), grantVote, requesterTerm, votedFor, voteAtTerm, hasNotVoted, isLatestLog);
             response.setVote(grantVote);
-            response.setResponderTerm(term);
-            rpcCallAsync(request.getNodeId(), "handleElectionResponse", response);
-            if (grantVote) {
-                voteAtTerm = term;
-                votedFor = request.getNodeId();
+            if (grantVote || requesterTerm > term) {
+                if (requesterTerm > term) {
+                    term = requesterTerm;
+                }
+                if (grantVote) {
+                    voteAtTerm = term;
+                    votedFor = request.getNodeId();
+                }
                 doFollower();
             }
+            response.setResponderTerm(term);
+            rpcCallAsync(request.getNodeId(), "handleElectionResponse", response);
         }
         lock.unlock();
     }
@@ -326,7 +322,9 @@ public class Raft implements Node {
         );
         lock.lock();
         for (String peer : peers.keySet()) {
-            nextIndexMap.put(peer, logs.size());
+            if (!peer.equals(me)) {
+                nextIndexMap.put(peer, logs.size());
+            }
         }
         lock.unlock();
         Runnable broadCastHeartBeat = new Runnable() {
@@ -398,7 +396,7 @@ public class Raft implements Node {
                 }
                 appendEntriesResponse.setMatchIndex(logs.size() - 1);
                 // 可能还没和leader节点日志完全同步Math.min(heartBeatRequest.getLeaderCommit(), logs.size() - 1)
-                log.info("node {}, term {}, commitIndex {}, leader commit index {}, logs last index {} ", me, term, commitIndex, heartBeatRequest.getLeaderCommit(), logs.size() - 1);
+                log.info("node {}, term {}, commitIndex {}, leader request {}, logs last index {} ", me, term, commitIndex, heartBeatRequest, logs.size() - 1);
                 commitIndex = Math.max(commitIndex, Math.min(heartBeatRequest.getLeaderCommit(), logs.size() - 1));
                 log.info("node {}, term {}, commitIndex {}, lastApplied {} ", me, term, commitIndex, lastApplied);
                 replyToClient();
