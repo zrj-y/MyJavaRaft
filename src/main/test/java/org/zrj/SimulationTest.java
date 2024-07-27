@@ -13,21 +13,11 @@ import java.util.List;
 @Slf4j
 public class SimulationTest {
     private final int RaftElectionTimeout = 1000;
-    static int a = 0;
-
-    @Test
-    public void test() {
-        for (int i = 0; i < 100; ++i) {
-            a = i;
-            testInitialElection2A();
-            Sleep.sleep(100);
-        }
-    }
-
+    private static int testId = 0;
     public static void main(String[] args) {
         SimulationTest simulationTest = new SimulationTest();
         for (int i = 0; i < 10; ++i) {
-            a = i;
+            testId = i;
             simulationTest.testFailNoAgree2B();
         }
     }
@@ -43,7 +33,7 @@ public class SimulationTest {
     @Test
     public void testInitialElection2A() {
         int size = 3;
-        ClusterConfig clusterConfig = new ClusterConfig(size, false, a);
+        ClusterConfig clusterConfig = new ClusterConfig(size, false, testId);
         clusterConfig.begin("Test (2A): initial election");
         try {
             // is a leader elected?
@@ -75,7 +65,7 @@ public class SimulationTest {
     @Test
     public void testReElection2A() {
         int servers = 3;
-        ClusterConfig clusterConfig = new ClusterConfig(servers, false, a);
+        ClusterConfig clusterConfig = new ClusterConfig(servers, false, testId);
         clusterConfig.begin("Test (2A): election after network failure");
 
         String leader1 = clusterConfig.checkOneLeader();
@@ -111,7 +101,7 @@ public class SimulationTest {
     @Test
     public void testBasicAgree2B() {
         int servers = 3;
-        ClusterConfig clusterConfig = new ClusterConfig(servers, false, a);
+        ClusterConfig clusterConfig = new ClusterConfig(servers, false, testId);
         clusterConfig.begin("Test (2B): basic agreement");
 
         int iters = 3;
@@ -139,7 +129,7 @@ public class SimulationTest {
     @Test
     public void testRPCBytes2B() {
         int servers = 3;
-        ClusterConfig clusterConfig = new ClusterConfig(servers, false, a);
+        ClusterConfig clusterConfig = new ClusterConfig(servers, false, testId);
         clusterConfig.begin("Test (2B): RPC byte count");
 
         clusterConfig.one("99", servers, false);
@@ -170,7 +160,7 @@ public class SimulationTest {
     @Test
     public void testFailAgree2B() {
         int servers = 3;
-        ClusterConfig cfg = new ClusterConfig(servers, false, a);
+        ClusterConfig cfg = new ClusterConfig(servers, false, testId);
         cfg.begin("Test (2B): agreement despite follower disconnection");
 
         cfg.one("101", servers, false);
@@ -204,7 +194,7 @@ public class SimulationTest {
     @Test
     public void testFailNoAgree2B() {
         int servers = 5;
-        ClusterConfig cfg = new ClusterConfig(servers, false, a);
+        ClusterConfig cfg = new ClusterConfig(servers, false, testId);
 
         cfg.begin("Test (2B): no agreement if too many followers disconnect");
 
@@ -262,7 +252,7 @@ public class SimulationTest {
     @Test
     public void testRejoin2B() {
         int servers = 3;
-        ClusterConfig cfg = new ClusterConfig(servers, false, a);
+        ClusterConfig cfg = new ClusterConfig(servers, false, testId);
 
         cfg.begin("Test (2B): rejoin of partitioned leader");
 
@@ -301,7 +291,7 @@ public class SimulationTest {
     @Test
     public void testBackup2B() {
         int servers = 5;
-        ClusterConfig cfg = new ClusterConfig(servers, false, a);
+        ClusterConfig cfg = new ClusterConfig(servers, false, testId);
 
         cfg.begin("Test (2B): leader backs up quickly over incorrect follower logs");
         List<String> nodes = cfg.getNodes();
