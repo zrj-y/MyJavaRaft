@@ -6,10 +6,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.zrj.raft.ClusterConfig;
 import org.zrj.raft.Sleep;
-import org.zrj.rpc.tool.ObjectSize;
-
-import java.util.ArrayList;
-import java.util.concurrent.atomic.AtomicInteger;
+import org.zrj.raft.StartResponse;
 
 @Slf4j
 public class SimulationTest {
@@ -29,7 +26,7 @@ public class SimulationTest {
         SimulationTest simulationTest = new SimulationTest();
         for (int i = 0; i < 10; ++i) {
             a = i;
-            simulationTest.testFailAgree2B();
+            simulationTest.testFailNoAgree2B();
         }
     }
 
@@ -197,6 +194,64 @@ public class SimulationTest {
         cfg.one("106", servers, true);
         Sleep.sleep(RaftElectionTimeout);
         cfg.one("107", servers, true);
+
+        cfg.end();
+        cfg.cleanUp();
+    }
+
+    @Test
+    public void testFailNoAgree2B() {
+        int servers = 5;
+        ClusterConfig cfg = new ClusterConfig(servers, false, a);
+
+        cfg.begin("Test (2B): no agreement if too many followers disconnect");
+
+        cfg.one("10", servers, false);
+
+        // 3 of 5 followers disconnect
+        String leader = cfg.checkOneLeader();
+        // next1 next2 next3不可能和leader是同一个节点
+        String next1 = cfg.nextNode(leader);
+        String next2 = cfg.nextNode(next1);
+        String next3 = cfg.nextNode(next2);
+        cfg.disconnect(next1);
+        cfg.disconnect(next2);
+        cfg.disconnect(next3);
+
+        StartResponse response = cfg.getNode(leader).start("20");
+        if (!response.isLeader()) {
+            throw new RuntimeException("leader rejected Start()");
+        }
+        int index = response.getCommandIndex();
+        if(index != 1) {
+            throw new RuntimeException(String.format("expected index 1, got %d", index));
+        }
+
+        Sleep.sleep(2 * RaftElectionTimeout);
+
+        int n = cfg.nCommitted(index).getCount();
+        if (n > 0) {
+            throw new RuntimeException(String.format("%d committed but no majority", n));
+        }
+
+        // repair
+        cfg.connect(next1);
+        cfg.connect(next2);
+        cfg.connect(next3);
+
+        // the disconnected majority may have chosen a leader from
+        // among their own ranks, forgetting index 2.
+        String leader2 = cfg.checkOneLeader();
+        response = cfg.getNode(leader2).start("30");
+        int index2 = response.getCommandIndex();
+        if (!response.isLeader()) {
+            throw new RuntimeException("leader2 rejected Start()");
+        }
+        if (index2 < 1 || index2 > 2) {
+            throw new RuntimeException(String.format("unexpected index %d", index2));
+        }
+
+        cfg.one("1000", servers, true);
 
         cfg.end();
         cfg.cleanUp();
