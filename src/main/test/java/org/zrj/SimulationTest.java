@@ -29,7 +29,7 @@ public class SimulationTest {
         SimulationTest simulationTest = new SimulationTest();
         for (int i = 0; i < 10; ++i) {
             a = i;
-            simulationTest.testBasicAgree2B();
+            simulationTest.testFailAgree2B();
         }
     }
 
@@ -166,5 +166,39 @@ public class SimulationTest {
         }
         clusterConfig.end();
         clusterConfig.cleanUp();
+    }
+
+    @Test
+    public void testFailAgree2B() {
+        int servers = 3;
+        ClusterConfig cfg = new ClusterConfig(servers, false, a);
+        cfg.begin("Test (2B): agreement despite follower disconnection");
+
+        cfg.one("101", servers, false);
+
+        // disconnect one follower from the network.
+        String leader = cfg.checkOneLeader();
+        cfg.disconnect(cfg.nextNode(leader));
+
+        // the leader and remaining follower should be
+        // able to agree despite the disconnected follower.
+        cfg.one("102", servers-1, false);
+        cfg.one("103", servers-1, false);
+        Sleep.sleep(RaftElectionTimeout);
+        cfg.one("104", servers-1, false);
+        cfg.one("105", servers-1, false);
+
+        // re-connect
+        cfg.connect(cfg.nextNode(leader));
+
+        // the full set of servers should preserve
+        // previous agreements, and be able to agree
+        // on new commands.
+        cfg.one("106", servers, true);
+        Sleep.sleep(RaftElectionTimeout);
+        cfg.one("107", servers, true);
+
+        cfg.end();
+        cfg.cleanUp();
     }
 }
