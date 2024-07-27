@@ -477,6 +477,10 @@ public class ClusterConfig {
         return null;
     }
 
+    public Raft getNode(String nodeId) {
+        return rafts.get(nodeId);
+    }
+
     @Builder
     @Getter
     @ToString
