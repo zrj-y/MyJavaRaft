@@ -2,9 +2,11 @@ package org.zrj.raft.message;
 
 import lombok.Getter;
 import lombok.Setter;
+import lombok.ToString;
 
 @Getter
 @Setter
+@ToString
 public class AppendEntriesResponse extends Message {
     private String nodeId;
     private boolean success;

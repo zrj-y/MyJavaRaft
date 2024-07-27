@@ -1,10 +1,15 @@
 package org.zrj;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.Before;
 import org.junit.Test;
 import org.zrj.raft.ClusterConfig;
 import org.zrj.raft.Sleep;
+import org.zrj.rpc.tool.ObjectSize;
+
+import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 public class SimulationTest {
@@ -22,7 +27,7 @@ public class SimulationTest {
 
     public static void main(String[] args) {
         SimulationTest simulationTest = new SimulationTest();
-        for (int i = 0; i < 20; ++i) {
+        for (int i = 0; i < 10; ++i) {
             a = i;
             simulationTest.testBasicAgree2B();
         }
@@ -125,6 +130,40 @@ public class SimulationTest {
             }
         }
 
+        clusterConfig.end();
+        clusterConfig.cleanUp();
+    }
+
+    // 试了用Java工具获取对象大小性能太差，需要几十毫秒，因此这个测试不完全和原课程一致
+    // check, based on counting bytes of RPCs, that
+    // each command is sent to each peer just once.
+    @Test
+    public void testRPCBytes2B() {
+        int servers = 3;
+        ClusterConfig clusterConfig = new ClusterConfig(servers, false, a);
+        clusterConfig.begin("Test (2B): RPC byte count");
+
+        clusterConfig.one("99", servers, false);
+        long bytes0 = clusterConfig.bytesTotal();
+
+        int iters = 10;
+        long sent = 0;
+        int cmdSize = 500;
+        for (int index = 1; index <= iters; index++) {
+            String cmd = RandomStringUtils.randomAlphabetic(cmdSize);
+            int xindex = clusterConfig.one(cmd, servers, false);
+            if (xindex != index) {
+                throw new RuntimeException(String.format("got index %d but expected %d", xindex, index));
+            }
+            sent += cmd.length();
+        }
+
+        long bytes1 = clusterConfig.bytesTotal();
+        long got = bytes1 - bytes0;
+        long expected = (servers - 1) * sent;
+        if (got > expected) {
+            throw new RuntimeException(String.format("too many RPC bytes; got %d, expected %d", got, expected));
+        }
         clusterConfig.end();
         clusterConfig.cleanUp();
     }

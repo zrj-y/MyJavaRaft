@@ -67,7 +67,7 @@ public class Raft implements Node {
         this.matchIndexMap = new HashMap<>();
         for (String peer : peers.keySet()) {
             nextIndexMap.put(peer, 0);
-            matchIndexMap.put(peer, 0);
+            matchIndexMap.put(peer, -1);
         }
         this.votedFor = null;
         this.voteAtTerm = -1;
@@ -348,10 +348,10 @@ public class Raft implements Node {
                         int nextIndex = nextIndexMap.get(peerId);
                         int prevLogIndex = nextIndex - 1;
                         int lastIndex = Math.min(logs.size() - 1, nextIndex + ClusterConfigConstant.MAX_BATCH_SIZE);
-                        int prevLogTerm = prevLogIndex >= 0 && logs.size() > 0 ? logs.get(prevLogIndex).getIndex() : 0;
+                        int prevLogTerm = prevLogIndex >= 0 && logs.size() > 0 ? logs.get(prevLogIndex).getTerm() : 0;
                         // 初始化时nextIndex == logs.size()，此时发空心跳包检测match情况，不match再减少nextIndex
                         // 异步调用RPC接口，传入参数中包含list接口，与Raft其他线程并发修改list会造成ConcurrentModificationException
-                        List<LogEntry> logEntries = nextIndex == logs.size() || logs.size() == 0 ? new ArrayList<>() : new ArrayList<>(logs.subList(nextIndex, lastIndex + 1));
+                        List<LogEntry> logEntries = (nextIndex == logs.size() || logs.size() == 0) ? new ArrayList<>() : new ArrayList<>(logs.subList(nextIndex, lastIndex + 1));
                         if (logEntries.size() == 0) {
                             log.info("empty entry nextIndex-{} lastIndex-{}", nextIndex, lastIndex);
                         } else {
@@ -387,7 +387,7 @@ public class Raft implements Node {
             term = heartBeatRequest.getTerm();
             appendEntriesResponse.setResponderTerm(term);
             int prevLogIndex = heartBeatRequest.getPrevLogIndex();
-            if (prevLogIndex == -1 || (prevLogIndex < logs.size() && heartBeatRequest.getPreLogTerm() != logs.get(prevLogIndex).getTerm())) {
+            if (prevLogIndex == -1 || (prevLogIndex < logs.size() && heartBeatRequest.getPreLogTerm() == logs.get(prevLogIndex).getTerm())) {
                 appendEntriesResponse.setSuccess(true);
                 if (logs.size() - 1 == prevLogIndex) {
                     logs.addAll(heartBeatRequest.getEntries());
@@ -435,14 +435,15 @@ public class Raft implements Node {
             replyToClient();
         } else {
             // 每次nextIndex减1效率可能不高,让nextIndex回退多点
-            int nextIndex = Math.max(0, nextIndexMap.get(peer) - ClusterConfigConstant.MAX_BATCH_SIZE);
+            int nextIndex = Math.max(matchIndexMap.get(peer) + 1, Math.max(0, nextIndexMap.get(peer) - ClusterConfigConstant.MAX_BATCH_SIZE));
             nextIndexMap.put(peer, nextIndex);
         }
         lock.unlock();
     }
 
     private void updateCommitIndex(int matchIndex) {
-        if (logs.size() == 0) {
+        // Leader节点本身有日志了，但是matchIndex还是-1，之前的heartBeatResponse在有了日志后才收到
+        if (logs.size() == 0 || matchIndex < 0) {
             return;
         }
         int count = 0;
