@@ -93,7 +93,7 @@ public class Network {
                     (r, executor) -> log.warn("Net pool is full, reject the request {}", r)
                 );
                 while (!done.isDone()) {
-                    RpcRequestMessage req = endCh.poll(2 * 1000, TimeUnit.MILLISECONDS);
+                    RpcRequestMessage req = endCh.poll(10, TimeUnit.MILLISECONDS);
                     if (req == null) {
                         continue;
                     }

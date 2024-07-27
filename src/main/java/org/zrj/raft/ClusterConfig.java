@@ -207,10 +207,12 @@ public class ClusterConfig {
     }
 
     public void connect(String nodeId) {
+        log.info("connect {}", nodeId);
         enableConnect(nodeId, true);
     }
 
     public void disconnect(String nodeId) {
+        log.info("disconnect {}", nodeId);
         enableConnect(nodeId, false);
     }
 
@@ -225,7 +227,7 @@ public class ClusterConfig {
         // incoming ClientEnds
         for (int j = 0; j < nodeCount; ++j) {
             String endName = endNames.get(Network.Pair.builder().from(nodeIds.get(j)).to(nodeId).build());
-            network.enable(endName, true);
+            network.enable(endName, enable);
         }
     }
 
@@ -475,6 +477,10 @@ public class ClusterConfig {
             }
         }
         return null;
+    }
+
+    public List<String> getNodes() {
+        return nodeIds;
     }
 
     public Raft getNode(String nodeId) {

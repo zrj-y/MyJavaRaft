@@ -8,6 +8,8 @@ import org.zrj.raft.ClusterConfig;
 import org.zrj.raft.Sleep;
 import org.zrj.raft.StartResponse;
 
+import java.util.List;
+
 @Slf4j
 public class SimulationTest {
     private final int RaftElectionTimeout = 1000;
@@ -179,11 +181,11 @@ public class SimulationTest {
 
         // the leader and remaining follower should be
         // able to agree despite the disconnected follower.
-        cfg.one("102", servers-1, false);
-        cfg.one("103", servers-1, false);
+        cfg.one("102", servers - 1, false);
+        cfg.one("103", servers - 1, false);
         Sleep.sleep(RaftElectionTimeout);
-        cfg.one("104", servers-1, false);
-        cfg.one("105", servers-1, false);
+        cfg.one("104", servers - 1, false);
+        cfg.one("105", servers - 1, false);
 
         // re-connect
         cfg.connect(cfg.nextNode(leader));
@@ -223,7 +225,7 @@ public class SimulationTest {
             throw new RuntimeException("leader rejected Start()");
         }
         int index = response.getCommandIndex();
-        if(index != 1) {
+        if (index != 1) {
             throw new RuntimeException(String.format("expected index 1, got %d", index));
         }
 
@@ -255,5 +257,128 @@ public class SimulationTest {
 
         cfg.end();
         cfg.cleanUp();
+    }
+
+    @Test
+    public void testRejoin2B() {
+        int servers = 3;
+        ClusterConfig cfg = new ClusterConfig(servers, false, a);
+
+        cfg.begin("Test (2B): rejoin of partitioned leader");
+
+        cfg.one("101", servers, true);
+
+        // leader network failure
+        String leader1 = cfg.checkOneLeader();
+        cfg.disconnect(leader1);
+
+        // make old leader try to agree on some entries
+        cfg.getNode(leader1).start("102");
+        cfg.getNode(leader1).start("103");
+        cfg.getNode(leader1).start("104");
+
+        // new leader commits, also for index=2
+        cfg.one("103", 2, true);
+
+        // new leader network failure
+        String leader2 = cfg.checkOneLeader();
+        cfg.disconnect(leader2);
+
+        // old leader connected again
+        cfg.connect(leader1);
+
+        cfg.one("104", 2, true);
+
+        // all together now
+        cfg.connect(leader2);
+
+        cfg.one("105", servers, true);
+
+        cfg.end();
+        cfg.cleanUp();
+    }
+
+    @Test
+    public void testBackup2B() {
+        int servers = 5;
+        ClusterConfig cfg = new ClusterConfig(servers, false, a);
+
+        cfg.begin("Test (2B): leader backs up quickly over incorrect follower logs");
+        List<String> nodes = cfg.getNodes();
+
+        cfg.one(RandomStringUtils.randomAlphabetic(5), servers, true);
+
+        // put leader and one follower in a partition
+        String leader1 = cfg.checkOneLeader();
+        int leader1Id = indexOf(leader1, nodes);
+        cfg.disconnect(nodes.get((leader1Id + 2) % servers));
+        cfg.disconnect(nodes.get((leader1Id + 3) % servers));
+        cfg.disconnect(nodes.get((leader1Id + 4) % servers));
+
+        // submit lots of commands that won't commit
+        for (int i = 0; i < 50; i++) {
+            cfg.getNode(leader1).start(RandomStringUtils.randomAlphabetic(5));
+        }
+
+        Sleep.sleep(RaftElectionTimeout / 2);
+
+        cfg.disconnect(nodes.get((leader1Id) % servers));
+        cfg.disconnect(nodes.get((leader1Id + 1) % servers));
+
+        // allow other partition to recover
+        cfg.connect(nodes.get((leader1Id + 2) % servers));
+        cfg.connect(nodes.get((leader1Id + 3) % servers));
+        cfg.connect(nodes.get((leader1Id + 4) % servers));
+
+        // lots of successful commands to new group.
+        for (int i = 0; i < 50; i++) {
+            cfg.one(RandomStringUtils.randomAlphabetic(5), 3, true);
+        }
+
+        // now another partitioned leader and one follower
+        String leader2 = cfg.checkOneLeader();
+        String other = nodes.get((leader1Id + 2) % servers);
+        if (leader2.equals(other)) {
+            other = nodes.get((indexOf(leader2, nodes) + 1) % servers);
+        }
+        cfg.disconnect(other);
+
+        // lots more commands that won't commit
+        for (int i = 0; i < 50; i++) {
+            cfg.getNode(leader2).start(RandomStringUtils.randomAlphabetic(5));
+        }
+
+        Sleep.sleep(RaftElectionTimeout / 2);
+
+        // bring original leader back to life,
+        for (String n : cfg.getNodes()) {
+            cfg.disconnect(n);
+        }
+        cfg.connect(leader1);
+        cfg.connect(nodes.get((leader1Id + 1) % servers));
+        cfg.connect(other);
+
+        // lots of successful commands to new group.
+        for (int i = 0; i < 50; i++) {
+            cfg.one(RandomStringUtils.randomAlphabetic(5), 3, true);
+        }
+
+        // now everyone
+        for (String n : cfg.getNodes()) {
+            cfg.connect(n);
+        }
+        cfg.one(RandomStringUtils.randomAlphabetic(5), servers, true);
+
+        cfg.end();
+        cfg.cleanUp();
+    }
+
+    private int indexOf(String item, List<String> items) {
+        for (int i = 0; i < items.size(); ++i) {
+            if (items.get(i).equals(item)) {
+                return i;
+            }
+        }
+        return -1;
     }
 }
