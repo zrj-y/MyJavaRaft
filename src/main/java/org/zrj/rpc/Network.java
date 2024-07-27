@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.zrj.raft.Sleep;
 import org.zrj.rpc.tool.Channel;
+import org.zrj.rpc.tool.ObjectSize;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -97,7 +98,7 @@ public class Network {
                         continue;
                     }
                     count.incrementAndGet();
-                    bytes.addAndGet(req.getArgs().length);
+                    bytes.addAndGet(ObjectSize.bytes(req.getArgs()));
                     log.info("network start process requests num {}, request hashcode {}", count.get(), req.hashCode());
                     processReqPool.execute(() -> processReq(req));
                 }
@@ -202,10 +203,14 @@ public class Network {
                     new BasicThreadFactory.Builder().namingPattern("Network-Process-Req-Scheduled-pool1-").build()
                 );
                 RpcReplyMessage finalReply = reply;
-                executor.schedule(() -> offerReplyToRequestReplyChannel(request, finalReply), 200 + random.nextInt(1 + random.nextInt(2000)), TimeUnit.MILLISECONDS);
+                executor.schedule(() -> {
+                    offerReplyToRequestReplyChannel(request, finalReply);
+                    bytes.addAndGet(ObjectSize.bytes(finalReply.getReply()));
+                }, 200 + random.nextInt(1 + random.nextInt(2000)), TimeUnit.MILLISECONDS);
                 executor.shutdown();
             } else {
                 offerReplyToRequestReplyChannel(request, reply);
+                bytes.addAndGet(ObjectSize.bytes(reply.getReply()));
             }
         } else {
             ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(
