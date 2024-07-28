@@ -222,12 +222,20 @@ public class ClusterConfig {
         // outgoing ClientEnds
         for (int j = 0; j < nodeCount; ++j) {
             String endName = endNames.get(Network.Pair.builder().from(nodeId).to(nodeIds.get(j)).build());
-            network.enable(endName, enable);
+            if (enable && connected.get(nodeIds.get(j))) {
+                network.enable(endName, true);
+            } else {
+                network.enable(endName, false);
+            }
         }
         // incoming ClientEnds
         for (int j = 0; j < nodeCount; ++j) {
             String endName = endNames.get(Network.Pair.builder().from(nodeIds.get(j)).to(nodeId).build());
-            network.enable(endName, enable);
+            if (enable && connected.get(nodeIds.get(j))) {
+                network.enable(endName, true);
+            } else {
+                network.enable(endName, false);
+            }
         }
     }
 
@@ -385,7 +393,7 @@ public class ClusterConfig {
     public int one(String cmd, int expectedServers, boolean retry) {
         long t0 = System.currentTimeMillis();
         int starts = 0;
-        while (TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis() - t0) < 10) {
+        while (TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis() - t0) < 3) {
             // try all the servers, maybe one is the leader.
             int index = -1;
             for (int si = 0; si < nodeCount; ++si) {

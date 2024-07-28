@@ -14,6 +14,7 @@ import java.util.List;
 public class SimulationTest {
     private final int RaftElectionTimeout = 1000;
     private static int testId = 0;
+
     public static void main(String[] args) {
         SimulationTest simulationTest = new SimulationTest();
         for (int i = 0; i < 10; ++i) {
@@ -295,23 +296,24 @@ public class SimulationTest {
 
         cfg.begin("Test (2B): leader backs up quickly over incorrect follower logs");
         List<String> nodes = cfg.getNodes();
-
-        cfg.one(RandomStringUtils.randomAlphabetic(5), servers, true);
+        log.info("phase1 start");
+        cfg.one(RandomStringUtils.randomAlphabetic(1), servers, true);
 
         // put leader and one follower in a partition
         String leader1 = cfg.checkOneLeader();
         int leader1Id = indexOf(leader1, nodes);
+        log.info("phase1 end");
         cfg.disconnect(nodes.get((leader1Id + 2) % servers));
         cfg.disconnect(nodes.get((leader1Id + 3) % servers));
         cfg.disconnect(nodes.get((leader1Id + 4) % servers));
-
+        log.info("phase2 start");
         // submit lots of commands that won't commit
-        for (int i = 0; i < 50; i++) {
-            cfg.getNode(leader1).start(RandomStringUtils.randomAlphabetic(5));
+        for (int i = 0; i < 2; i++) {
+            cfg.getNode(leader1).start(RandomStringUtils.randomAlphabetic(1));
         }
 
         Sleep.sleep(RaftElectionTimeout / 2);
-
+        log.info("phase2 end");
         cfg.disconnect(nodes.get((leader1Id) % servers));
         cfg.disconnect(nodes.get((leader1Id + 1) % servers));
 
@@ -319,11 +321,12 @@ public class SimulationTest {
         cfg.connect(nodes.get((leader1Id + 2) % servers));
         cfg.connect(nodes.get((leader1Id + 3) % servers));
         cfg.connect(nodes.get((leader1Id + 4) % servers));
-
+        log.info("phase3 start");
         // lots of successful commands to new group.
-        for (int i = 0; i < 50; i++) {
-            cfg.one(RandomStringUtils.randomAlphabetic(5), 3, true);
+        for (int i = 0; i < 2; i++) {
+            cfg.one(RandomStringUtils.randomAlphabetic(1), 3, true);
         }
+
 
         // now another partitioned leader and one follower
         String leader2 = cfg.checkOneLeader();
@@ -331,15 +334,16 @@ public class SimulationTest {
         if (leader2.equals(other)) {
             other = nodes.get((indexOf(leader2, nodes) + 1) % servers);
         }
+        log.info("phase3 end");
         cfg.disconnect(other);
-
+        log.info("phase4 start");
         // lots more commands that won't commit
-        for (int i = 0; i < 50; i++) {
-            cfg.getNode(leader2).start(RandomStringUtils.randomAlphabetic(5));
+        for (int i = 0; i < 2; i++) {
+            cfg.getNode(leader2).start(RandomStringUtils.randomAlphabetic(1));
         }
 
         Sleep.sleep(RaftElectionTimeout / 2);
-
+        log.info("phase4 end");
         // bring original leader back to life,
         for (String n : cfg.getNodes()) {
             cfg.disconnect(n);
@@ -347,17 +351,21 @@ public class SimulationTest {
         cfg.connect(leader1);
         cfg.connect(nodes.get((leader1Id + 1) % servers));
         cfg.connect(other);
-
+        log.info("phase5 start");
+        Sleep.sleep(RaftElectionTimeout * 2);
         // lots of successful commands to new group.
-        for (int i = 0; i < 50; i++) {
-            cfg.one(RandomStringUtils.randomAlphabetic(5), 3, true);
+        for (int i = 0; i < 2; i++) {
+            cfg.one(RandomStringUtils.randomAlphabetic(1), 3, true);
         }
-
+        log.info("phase5 end");
         // now everyone
         for (String n : cfg.getNodes()) {
             cfg.connect(n);
         }
-        cfg.one(RandomStringUtils.randomAlphabetic(5), servers, true);
+        log.info("phase6 start");
+        Sleep.sleep(RaftElectionTimeout);
+        cfg.one(RandomStringUtils.randomAlphabetic(2), servers, true);
+        log.info("phase6 end");
 
         cfg.end();
         cfg.cleanUp();

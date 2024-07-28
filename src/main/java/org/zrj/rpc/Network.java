@@ -93,7 +93,7 @@ public class Network {
                     (r, executor) -> log.warn("Net pool is full, reject the request {}", r)
                 );
                 while (!done.isDone()) {
-                    RpcRequestMessage req = endCh.poll(10, TimeUnit.MILLISECONDS);
+                    RpcRequestMessage req = endCh.poll(2 * 1000, TimeUnit.MILLISECONDS);
                     if (req == null) {
                         continue;
                     }
@@ -153,7 +153,6 @@ public class Network {
         Server server = Optional.ofNullable(serverName)
             .map(servers::get).orElse(null);
         lock.unlock();
-
         if (enable && serverName != null && server != null) {
             if (!reliable) {
                 Sleep.sleep(random.nextInt(27));
@@ -188,7 +187,7 @@ public class Network {
                 } else {
                     serverDead = isServerDead(request.getEndName(), serverName, server);
                     if (serverDead) {
-                        new Thread(() -> ech.poll(2 * 1000, TimeUnit.MILLISECONDS), "Consume-last-message-thread-").start();
+                        new Thread(() -> ech.poll(10, TimeUnit.MILLISECONDS), "Consume-last-message-thread-").start();
                     }
                 }
             }
@@ -284,7 +283,7 @@ public class Network {
     }
 
     private void offerReplyToRequestReplyChannel(RpcRequestMessage request, RpcReplyMessage reply) {
-        boolean success = request.getReplyCh().offer(reply, 2 * 1000, TimeUnit.MILLISECONDS);
+        boolean success = request.getReplyCh().offer(reply, 10, TimeUnit.MILLISECONDS);
         if (success) {
             log.info("offer message to reply channel, request hashcode {}, {} {}", request.hashCode(), Metrics.RPC_REPLY_OFFER_COUNT_METRICS, Metrics.RPC_REPLY_OFFER_COUNT.incrementAndGet());
         } else {

@@ -233,20 +233,24 @@ public class Raft implements Node {
         } else {
             // 使用voteFor == null判断比较麻烦，还需要每次更新term的时候将voteFor设置为null
             // 使用voteAtTerm只需要在这里更新就可以了
-            boolean hasNotVoted = (voteAtTerm != term || votedFor == null);
+            boolean hasNotVoted = (voteAtTerm != requesterTerm || votedFor == null);
             boolean isLatestLog = isLatestLog(request);
             boolean grantVote = hasNotVoted && isLatestLog;
-            log.info("{} at term {} grant request from {} {}, requesterTerm {}, my voteFor {}, my voteAtTerm {}, hasNotVoted {}, isLatestLog {}", me, term, request.getNodeId(), grantVote, requesterTerm, votedFor, voteAtTerm, hasNotVoted, isLatestLog);
+            log.info("{} at term {} grant request from {} {}, request{},mylogs{} my voteFor {}, my voteAtTerm {}, hasNotVoted {}, isLatestLog {}", me, term, request.getNodeId(), grantVote, requesterTerm, logs, votedFor, voteAtTerm, hasNotVoted, isLatestLog);
             response.setVote(grantVote);
             if (grantVote || requesterTerm > term) {
-                if (requesterTerm > term) {
-                    term = requesterTerm;
-                }
                 if (grantVote) {
                     voteAtTerm = term;
                     votedFor = request.getNodeId();
                 }
-                doFollower();
+                if (requesterTerm > term) {
+                    term = requesterTerm;
+                }
+                if(isLatestLog) {
+                    // 没必要转成follower，论文没写这些
+                    // todo isLatestLog可以返回给候选人，让候选者成为follower
+                    doFollower();
+                }
             }
             response.setResponderTerm(term);
             rpcCallAsync(request.getNodeId(), "handleElectionResponse", response);
@@ -279,6 +283,7 @@ public class Raft implements Node {
         // 这个response可能是去年发出的request的响应
         if (response.getRequesterTerm() != term) {
             log.info("{} at term {} handleElectionResponse {} return1", me, term, response);
+            lock.unlock();
             return;
         }
         if (!response.getVote()) {
@@ -332,16 +337,16 @@ public class Raft implements Node {
             public void run() {
                 lock.lock();
                 if (Leader.equals(role) && !stop) {
-                    AppendEntriesRequest heartBeatRequest = new AppendEntriesRequest();
-                    heartBeatRequest.setTracingId();
-                    heartBeatRequest.setLeaderId(me);
-                    heartBeatRequest.setTerm(term);
-                    heartBeatRequest.setLeaderCommit(commitIndex);
                     for (Map.Entry<String, RpcClient> peer : peers.entrySet()) {
                         String peerId = peer.getKey();
                         if (me.equals(peerId)) {
                             continue;
                         }
+                        AppendEntriesRequest heartBeatRequest = new AppendEntriesRequest();
+                        heartBeatRequest.setTracingId();
+                        heartBeatRequest.setLeaderId(me);
+                        heartBeatRequest.setTerm(term);
+                        heartBeatRequest.setLeaderCommit(commitIndex);
                         // 收到response时候需要更新nextIndexMap，注意线程安全
                         int nextIndex = nextIndexMap.get(peerId);
                         int prevLogIndex = nextIndex - 1;
@@ -351,7 +356,7 @@ public class Raft implements Node {
                         // 异步调用RPC接口，传入参数中包含list接口，与Raft其他线程并发修改list会造成ConcurrentModificationException
                         List<LogEntry> logEntries = (nextIndex == logs.size() || logs.size() == 0) ? new ArrayList<>() : new ArrayList<>(logs.subList(nextIndex, lastIndex + 1));
                         if (logEntries.size() == 0) {
-                            log.info("empty entry nextIndex-{} lastIndex-{}", nextIndex, lastIndex);
+                            log.info("empty entry to {} nextIndexMap-{} matchIndexMap-{}", peer, nextIndexMap, matchIndexMap);
                         } else {
                             log.info("not-empty entry nextIndex-{} lastIndex-{}", nextIndex, lastIndex);
                         }
@@ -377,9 +382,10 @@ public class Raft implements Node {
         AppendEntriesResponse appendEntriesResponse = new AppendEntriesResponse();
         appendEntriesResponse.setNodeId(me);
         appendEntriesResponse.setRequesterTerm(heartBeatRequest.getTerm());
+        appendEntriesResponse.setMatchIndex(-1);
+        appendEntriesResponse.setSuccess(false);
         if (heartBeatRequest.getTerm() < term) {
             appendEntriesResponse.setResponderTerm(term);
-            appendEntriesResponse.setSuccess(false);
             rpcCallAsync(heartBeatRequest.getLeaderId(), "handleHeartBeatResponse", appendEntriesResponse);
         } else {
             term = heartBeatRequest.getTerm();
@@ -387,6 +393,9 @@ public class Raft implements Node {
             int prevLogIndex = heartBeatRequest.getPrevLogIndex();
             if (prevLogIndex == -1 || (prevLogIndex < logs.size() && heartBeatRequest.getPreLogTerm() == logs.get(prevLogIndex).getTerm())) {
                 appendEntriesResponse.setSuccess(true);
+                if(prevLogIndex == -1) {
+                    logs = new ArrayList<>();
+                }
                 if (logs.size() - 1 == prevLogIndex) {
                     logs.addAll(heartBeatRequest.getEntries());
                 } else {
