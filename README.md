@@ -1,7 +1,3 @@
-好的，这是一个为 `MyJavaRaft` 项目量身定制的专业 `README.md` 文件。它结构清晰，突出了项目的技术深度和你的个人贡献。
-
----
-
 # MyJavaRaft
 一个基于 Java 实现的轻量级、易于理解的 Raft 分布式一致性算法核心库。本项目完整实现了 Raft 算法的核心机制，旨在帮助开发者深入理解分布式共识原理，并可作为构建强一致性分布式系统（如分布式锁服务、配置管理、元数据存储）的基础模块。
 
@@ -29,3 +25,4 @@
 
 - **[In Search of an Understandable Consensus Algorithm](https://raft.github.io/raft.pdf)** - Diego Ongaro 和 John Ousterhout 的 Raft 原始论文
 - **[The Raft Consensus Algorithm](https://raft.github.io/)** - Raft 官方网站，包含可视化动画等宝贵资源
+
